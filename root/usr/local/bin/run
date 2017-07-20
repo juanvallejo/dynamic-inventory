@@ -1,0 +1,18 @@
+#!/bin/bash -e
+#
+# TODO: UPDATE FILE TO USE OC TO PERFORM `oc get nodes` AGAINST THE HOST
+# oc login https://ec2-52-207-229-212.compute-1.amazonaws.com:8443 --token=p9t4q0y5jJ2PPEkr627RVvAuZ7MHHi0-_84y-UKYsNM
+#
+# This file serves as the default command to the openshift-ansible image.
+# Runs a playbook with inventory as specified by environment variables.
+#
+# For more information see the documentation:
+#	https://github.com/openshift/openshift-ansible/blob/master/README_CONTAINER_IMAGE.md
+
+# SOURCE and HOME DIRECTORY: /opt/app-root/src
+
+if ! whoami &>/dev/null; then
+  echo "${USER:-default}:x:$(id -u):$(id -g):Default User:$HOME:/sbin/nologin" >> /etc/passwd
+fi
+
+exec pwd && ls ./
