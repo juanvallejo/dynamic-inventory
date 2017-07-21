@@ -16,7 +16,7 @@ COPY root /
 
 ENV HOME=/opt/app-root \
 	WORK_DIR=${HOME} \
-	USER_UID=1001
+	USER_UID=1000
 
 RUN /usr/local/bin/user_setup
 # ENTRYPOINT /usr/local/bin/entrypoint

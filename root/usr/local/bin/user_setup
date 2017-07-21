@@ -10,7 +10,7 @@ chmod ug+rwx ${HOME}
 chmod g+rw /etc/passwd
 
 # ensure that the ansible content is accessible
-chmod -R g+r ${WORK_DIR}
+chmod -R g+r ${WORK_DIR} /bin
 find ${WORK_DIR} -type d -exec chmod g+x {} +
 
 # This will redirect us to the latest stable release.
@@ -20,10 +20,14 @@ version=$(echo $redirect | grep -o v[0-9]\.[0-9]*\.[0-9]*)
 git_commit=$(git ls-remote https://github.com/openshift/origin refs/tags/$version^{} | awk '{print $1}' | head -c 7)
 
 # Download and extract oc.
-oc_tar=openshift-origin-client-tools-$version-$git_commit-linux-64bit.tar.gz
+oc_src_dir=openshift-origin-client-tools-$version-$git_commit-linux-64bit
+oc_tar=$oc_src_dir.tar.gz
 wget https://github.com/openshift/origin/releases/download/$version/$oc_tar
 tar -xzf $oc_tar
 rm $oc_tar
+
+mv $oc_src_dir/oc /bin
+rm -r $oc_src_dir
 
 # no need for this script to remain in the image after running
 rm $0
