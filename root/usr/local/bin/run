@@ -1,18 +1,215 @@
-#!/bin/bash -e
-#
-# TODO: UPDATE FILE TO USE OC TO PERFORM `oc get nodes` AGAINST THE HOST
-# oc login https://ec2-52-207-229-212.compute-1.amazonaws.com:8443 --token=p9t4q0y5jJ2PPEkr627RVvAuZ7MHHi0-_84y-UKYsNM
-#
-# This file serves as the default command to the openshift-ansible image.
-# Runs a playbook with inventory as specified by environment variables.
-#
-# For more information see the documentation:
-#	https://github.com/openshift/openshift-ansible/blob/master/README_CONTAINER_IMAGE.md
+#!/bin/env python
 
-# SOURCE and HOME DIRECTORY: /opt/app-root/src
+"""
+Attempts to read 'master-config.yaml' and extract remote
+host information to dynamically create an inventory file
+in order to run Ansible playbooks against that host.
+"""
 
-# if ! whoami &>/dev/null; then
-#   echo "${USER:-default}:x:$(id -u):$(id -g):Default User:$HOME:/sbin/nologin" >> /etc/passwd
-# fi
+import os
+import yaml
 
-exec /bin/oc
+HOME = os.environ['HOME']
+CONFIG = 'master-config.yaml'
+INVY = 'generated_hosts'
+
+
+class InvalidHost(Exception):
+    """Base exception class for host creation problems."""
+    pass
+
+
+class InvalidHostGroup(Exception):
+    """Base exception class for host-group creation problems."""
+    pass
+
+
+class HostGroup():
+    groupname = ""
+    hosts = list()
+
+    def __init__(self, hosts):
+        if not hosts:
+            return
+        first = hosts[0].get_group_name()
+        for h in hosts:
+            if h.get_group_name() != first:
+                raise InvalidHostGroup("Attempt to create HostGroup with hosts of varying groups.")
+
+        self.hosts = hosts
+        self.groupname = first
+
+    def add_host(self, host):
+        """Add a new host to this group."""
+        self.hosts.append(host)
+
+    def get_group_name(self):
+        """Return the groupname associated with each aggregated host."""
+        return self.groupname
+
+    def get_hosts(self):
+        """Return aggregated hosts"""
+        return self.hosts
+
+    def string(self):
+        """Call the print method for each aggregated host; separated by newlines."""
+        infos = ""
+        for host in self.hosts:
+            infos += host.string() + "\n"
+        return infos
+
+class Host():
+    group = "masters"
+    alias = ""
+    hostname = "localhost"
+    public_hostname = ""
+    ip_addr = "localhost"
+    public_ip_addr = ""
+
+    def __init__(self, groupname):
+        if not groupname:
+            raise InvalidHost("Attempt to create Host with no group name provided.")
+        self.group = groupname
+
+    def get_group_name(self):
+        return self.group
+
+    def get_openshift_hostname(self):
+        return self.host_alias
+
+    def host_alias(self, hostalias):
+        """Set an alias for this host."""
+        self.alias = hostalias
+
+    def address(self, ip):
+        """Set the ip address for this host."""
+        self.ip_addr = ip
+
+    def public_address(self, ip):
+        """Set the external ip address for this host."""
+        self.public_ip_addr = ip
+
+    def host_name(self, hname):
+        self.hostname = hname 
+
+    def public_host_name(self, phname):
+        self.public_hostname = phname
+
+    def string(self):
+        """Print an inventory-file compatible string with host information"""
+        info = ""
+        if self.alias:
+            info += self.alias + " "
+        if self.ip_addr:
+            info += "openshift_ip=" + self.ip_addr + " "
+        if self.public_ip_addr:
+            info += "openshift_public_ip=" + self.public_ip_addr + " "
+        if self.hostname:
+            info += "openshift_hostname=" + self.hostname + " "
+        if self.public_hostname:
+            info += "openshift_public_hostname=" + self.public_hostname
+
+        return info
+
+
+def main():
+    """Parse master-config file and populate inventory file."""
+    try:
+        file_obj = open(HOME + '/' + CONFIG, 'r')
+    except IOError as err:
+        print "Unable to find or read host master configuration file '{}': {}".format(CONFIG, err)
+        exit(1)
+
+    raw_text = file_obj.read()
+
+    y = yaml.load(raw_text)
+    if y.get("kind", "") != "MasterConfig":
+        print "Bind-mounted host master configuration file is not of 'kind' MasterConfig. Aborting..."
+        exit(1)
+
+
+    # finish reading config file and begin gathering 
+    # cluster information for inventory file
+    file_obj.close()
+
+    # TODO(jvallejo): read bind-mounted user-config file containing this information
+    common_host_alias = "openshiftdevel"
+    ansible_ssh_user = "ec2-user"
+    openshift_uninstall_images = False
+    openshift_install_examples = True
+    openshift_deployment_type = "origin"
+
+    # extract host config info from parsed yaml file
+    asset_config  = y.get("assetConfig")
+    master_config = y.get("kubernetesMasterConfig")
+    etcd_config   = y.get("etcdClientInfo")
+    # TODO: I have no idea where / how node config is stored
+    # in the master-config file (only tested this with all-in-one).
+    nodes_config  = y.get("kubeletClientInfo")
+
+    # contains host types (e.g. masters, nodes, etcd)
+    host_groups = dict()
+    openshift_hosted_logging_deploy = False
+    ansible_become = "yes"
+    is_etcd_deployed = master_config.get("storage-backend", "") in ["etcd3", "etcd2", "etcd"]
+
+    if asset_config and asset_config.get('loggingPublicURL'):
+        openshift_hosted_logging_deploy = True
+
+    # TODO(jvallejo): extract additional master and node host information from `oc get nodes`
+    if master_config:
+        m = Host("masters")
+        m.host_alias(common_host_alias)
+        m.address(master_config["masterIP"])
+        m.public_host_name(y.get("masterPublicURL", ""))
+        host_groups["masters"] = HostGroup([m])
+
+    if nodes_config:
+        n = Host("nodes")
+        n.host_alias(common_host_alias)
+        host_groups["nodes"] = HostGroup([n])
+
+    if etcd_config:
+        etcd_hosts = list()
+        for url in etcd_config.get("urls", []):
+            e = Host("etcd")
+            e.host_alias(common_host_alias)
+            e.host_name(url)
+            etcd_hosts.append(e)
+
+        host_groups["etcd"] = HostGroup(etcd_hosts)
+
+     # open new inventory file for writing
+    try:
+        inv_file_obj = open(HOME + '/' + INVY, 'w+')
+    except IOError as err:
+        print "Unable to create or open existing generated inventory file: {}".format(err)
+        exit(1)
+
+    inv_file_obj.write("[OSEv3:children]\n")
+    for group in host_groups:
+        inv_file_obj.write("{}\n".format(group))
+    inv_file_obj.write("\n")
+
+
+    inv_file_obj.write("[OSEv3:vars]\n")
+    inv_file_obj.write("ansible_ssh_user={}\n".format(ansible_ssh_user))
+    inv_file_obj.write("ansible_become={}\n".format(ansible_become))
+    inv_file_obj.write("openshift_uninstall_images={}\n".format(str(openshift_uninstall_images)))
+    inv_file_obj.write("openshift_deployment_type={}\n".format(openshift_deployment_type))
+    inv_file_obj.write("openshift_install_examples={}\n".format(str(openshift_install_examples)))
+    inv_file_obj.write("\n")
+
+    inv_file_obj.write("openshift_hosted_logging_deploy={}\n".format(str(openshift_hosted_logging_deploy)))
+    inv_file_obj.write("\n")
+
+    for group in host_groups:
+        inv_file_obj.write("[{}]\n".format(host_groups[group].get_group_name()))
+        inv_file_obj.write(host_groups[group].string())
+        inv_file_obj.write("\n")
+
+    inv_file_obj.close()
+
+
+if __name__ == '__main__':
+    main()
