@@ -11,12 +11,13 @@ LABEL name="dynamic-inventory-generator" \
 
 COPY root /
 
-ENV HOME=/opt/app-root \
-	WORK_DIR=${HOME} \
+ENV APP_ROOT=/opt/app-root \
+	HOME=/opt/app-root/src \
+	WORK_DIR=/opt/app-root \
 	USER_UID=1001
 
 WORKDIR ${HOME}
 RUN /usr/local/bin/user_setup
-# ENTRYPOINT /usr/local/bin/entrypoint
-CMD /usr/local/bin/run
+ENTRYPOINT [ "/usr/local/bin/entrypoint" ]
+CMD [ "/usr/local/bin/run" ]
 

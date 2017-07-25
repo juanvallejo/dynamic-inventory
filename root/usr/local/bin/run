@@ -11,8 +11,8 @@
 
 # SOURCE and HOME DIRECTORY: /opt/app-root/src
 
-if ! whoami &>/dev/null; then
-  echo "${USER:-default}:x:$(id -u):$(id -g):Default User:$HOME:/sbin/nologin" >> /etc/passwd
-fi
+# if ! whoami &>/dev/null; then
+#   echo "${USER:-default}:x:$(id -u):$(id -g):Default User:$HOME:/sbin/nologin" >> /etc/passwd
+# fi
 
-exec ls ./
+exec /bin/oc
