@@ -16,5 +16,30 @@ docker run -u `id -u` \
        -v $HOME/.ssh/libra.pem:/opt/app-root/src/.ssh/id_rsa:Z,ro \
        -v $HOME/.ssh/dockerconfig:/opt/app-root/src/.ssh/config:Z,ro \
        -v /tmp/aws/hosts:/tmp/inventory/hosts:Z,ro \
+       -v /tmp/origin/master/admin.kubeconfig:/opt/app-root/src/.kube/config:Z \
+       -v /tmp/aws/master-config.yaml:/opt/app-root/src/master-config.yaml:Z \
+       juanvallejo/inventory-gen
+```
+
+### Debug
+
+To debug the `run` script, run the above script interactively
+and manually execute `/usr/local/bin/run`:
+
+```
+...
+docker run -u `id -u` \
+       -v ...
+       ...
        -it juanvallejo/inventory-gen /bin/bash
+
+---
+
+bash-4.2$ ls
+master-config.yaml
+bash-4.2$ /usr/local/bin/run
+bash-4.2$ ls
+generated_hosts  master-config.yaml
+bash-4.2$ less generated_hosts
+...
 ```

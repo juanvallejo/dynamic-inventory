@@ -7,6 +7,7 @@ in order to run Ansible playbooks against that host.
 """
 
 import os
+import re
 import yaml
 
 HOME = os.environ['HOME']
@@ -58,12 +59,13 @@ class HostGroup():
             infos += host.string() + "\n"
         return infos
 
+
 class Host():
     group = "masters"
     alias = ""
-    hostname = "localhost"
+    hostname = ""
     public_hostname = ""
-    ip_addr = "localhost"
+    ip_addr = ""
     public_ip_addr = ""
 
     def __init__(self, groupname):
@@ -90,10 +92,10 @@ class Host():
         self.public_ip_addr = ip
 
     def host_name(self, hname):
-        self.hostname = hname 
+        self.hostname = parse_hostname(hname)
 
     def public_host_name(self, phname):
-        self.public_hostname = phname
+        self.public_hostname = parse_hostname(phname)
 
     def string(self):
         """Print an inventory-file compatible string with host information"""
@@ -110,6 +112,20 @@ class Host():
             info += "openshift_public_hostname=" + self.public_hostname
 
         return info
+
+
+def parse_hostname(host):
+    """Remove protocol and port from given hostname.
+    Return parsed string"""
+    no_proto = re.split('^http(s)?\:\/\/', host)
+    if no_proto:
+        host = no_proto[-1]
+
+    no_port = re.split('\:[0-9]+(/)?$', host)
+    if no_port:
+        host = no_port[0]
+
+    return host
 
 
 def main():
