@@ -8,11 +8,19 @@ in order to run Ansible playbooks against that host.
 
 import os
 import re
+import shlex
+import shutil
+import subprocess
 import yaml
 
 HOME = os.environ['HOME']
 CONFIG = 'master-config.yaml'
 INVY = 'generated_hosts'
+
+
+class OpenShiftClientError(Exception):
+    """Base exception class for OpenShift CLI wrapper"""
+    pass
 
 
 class InvalidHost(Exception):
@@ -24,6 +32,56 @@ class InvalidHostGroup(Exception):
     """Base exception class for host-group creation problems."""
     pass
 
+
+class OpenShiftClient():
+    oc = None
+
+    def __init__(self):
+        """Find and store path to oc binary"""
+        # https://github.com/openshift/openshift-ansible/issues/3410
+        # oc can be in /usr/local/bin in some cases, but that may not
+        # be in $PATH due to ansible/sudo
+        paths = os.environ.get("PATH", os.defpath).split(os.pathsep) + ['/usr/local/bin', os.path.expanduser('~/bin')]
+
+        oc_binary_name = 'oc'
+        oc_binary = None
+
+        # Use shutil.which if it is available, otherwise fallback to a naive path search
+        try:
+            which_result = shutil.which(oc_binary_name, path=os.pathsep.join(paths))
+            if which_result is not None:
+                oc_binary = which_result
+        except AttributeError:
+            for path in paths:
+                if os.path.exists(os.path.join(path, oc_binary_name)):
+                    oc_binary = os.path.join(path, oc_binary_name)
+                    break
+
+        if oc_binary is None:
+            raise OpenShiftClientError('Unable to locate `oc` binary. Not present in PATH.')
+
+        self.oc = oc_binary
+
+    def call(self, cmd_str):
+        """Execute a remote call using `oc`"""
+        cmd = [
+            self.oc,
+        ] + shlex.split(cmd_str)
+        try:
+            out = subprocess.check_output(list(cmd), stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as err:
+            raise OpenShiftClientError('[rc {}] {}\n{}'.format(err.returncode, ' '.join(err.cmd), err.output))
+        return out
+
+
+    def login(self, host, user, password):
+        """Login using `oc` to the specified host"""
+        call_cmd = 'login {host} -u {u} -p {p}'
+        return self.call(call_cmd.format(host=host, u=user, p=password))
+
+    def get_nodes(self):
+        """Retrieve remote node information as a yaml object"""
+        return self.call('get nodes -o yaml')
 
 class HostGroup():
     groupname = ""
@@ -153,15 +211,31 @@ def main():
     ansible_ssh_user = "ec2-user"
     openshift_uninstall_images = False
     openshift_install_examples = True
-    openshift_deployment_type = "origin"
+    openshift_deployment_type  = "origin"
+    openshift_cluster_user     = 'developer'
+    openshift_cluster_pass     = 'fakepass'
 
     # extract host config info from parsed yaml file
     asset_config  = y.get("assetConfig")
     master_config = y.get("kubernetesMasterConfig")
     etcd_config   = y.get("etcdClientInfo")
-    # TODO: I have no idea where / how node config is stored
-    # in the master-config file (only tested this with all-in-one).
-    nodes_config  = y.get("kubeletClientInfo")
+    
+    # TODO(jvallejo): extract additional master and node host information from `oc get nodes`
+    # if master_config is missing, error out; we expect to be running on a master to be able to
+    # gather enough information to generate the rest of the inventory file.
+    if not master_config:
+        print "'kubernetesMasterConfig' missing from '{}'; unable to gather all necessary host information...".format(CONFIG)
+        exit(1)
+
+    master_public_url = y.get("masterPublicURL")
+    if not master_public_url:
+        print "'kubernetesMasterConfig.masterPublicURL' missing from '{}'; Unable to connect to master host...".format(CONFIG)
+        exit(1)
+
+    # connect to remote host using `oc login...` and extract all possible node information
+    oc  = OpenShiftClient()
+    oc.login(master_public_url, openshift_cluster_user, openshift_cluster_pass)
+    nodes_config = yaml.load(oc.get_nodes())
 
     # contains host types (e.g. masters, nodes, etcd)
     host_groups = dict()
@@ -172,18 +246,36 @@ def main():
     if asset_config and asset_config.get('loggingPublicURL'):
         openshift_hosted_logging_deploy = True
 
-    # TODO(jvallejo): extract additional master and node host information from `oc get nodes`
-    if master_config:
-        m = Host("masters")
-        m.host_alias(common_host_alias)
-        m.address(master_config["masterIP"])
-        m.public_host_name(y.get("masterPublicURL", ""))
-        host_groups["masters"] = HostGroup([m])
+
+    m = Host("masters")
+    m.host_alias(common_host_alias)
+    m.address(master_config["masterIP"])
+    m.public_host_name(master_public_url)
+    host_groups["masters"] = HostGroup([m])
 
     if nodes_config:
-        n = Host("nodes")
-        n.host_alias(common_host_alias)
-        host_groups["nodes"] = HostGroup([n])
+        node_hosts = list()
+        for node in nodes_config.get("items", []):
+            if node["kind"] != "Node":
+                continue
+
+            n = Host("nodes")
+            n.host_alias(common_host_alias)
+
+            address = ""
+            internal_hostname = ""
+            for item in node["status"].get("addresses", []):
+                if not address and item['type'] in ['InternalIP', 'LegacyHostIP']:
+                    address = item['address']
+
+                if item['type'] == 'Hostname':
+                    internal_hostname = item['address']
+
+            n.address(address)
+            n.host_name(internal_hostname)
+            node_hosts.append(n)
+
+        host_groups["nodes"] = HostGroup(node_hosts)
 
     if etcd_config:
         etcd_hosts = list()
