@@ -30,5 +30,10 @@ rm $oc_tar
 mv $oc_src_dir/oc /bin
 rm -r $oc_src_dir
 
+# clone openshift-ansible repository
+git clone https://github.com/openshift/openshift-ansible.git ${HOME}/temp
+cp -r ${HOME}/temp/* ${HOME}/
+rm -rf ${HOME}/temp
+
 # no need for this script to remain in the image after running
 rm $0

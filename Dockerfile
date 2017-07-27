@@ -2,7 +2,7 @@ FROM centos:7
 
 RUN INSTALL_PKGS="openssh-clients wget git" \
     && yum install -y --setopt=tsflags=nodocs $INSTALL_PKGS \
-    && EPEL_PKGS="PyYAML" \
+    && EPEL_PKGS="PyYAML ansible python2-boto" \
  	&& yum install -y epel-release \
  	&& yum install -y --setopt=tsflags=nodocs $EPEL_PKGS \
     && rpm -q $INSTALL_PKGS $EPEL_PKGS \

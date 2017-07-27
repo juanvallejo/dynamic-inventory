@@ -14,10 +14,10 @@ creating an inventory file from its environment.
 ```
 docker run -u `id -u` \
        -v $HOME/.ssh/libra.pem:/opt/app-root/src/.ssh/id_rsa:Z,ro \
-       -v $HOME/.ssh/dockerconfig:/opt/app-root/src/.ssh/config:Z,ro \
-       -v /tmp/aws/hosts:/tmp/inventory/hosts:Z,ro \
+       -v $HOME/.ssh/config:/opt/app-root/src/.ssh/config:Z,ro \
        -v /tmp/origin/master/admin.kubeconfig:/opt/app-root/src/.kube/config:Z \
        -v /tmp/aws/master-config.yaml:/opt/app-root/src/master-config.yaml:Z \
+       -e PLAYBOOK=playbooks/byo/openshift-checks/health.yml \
        juanvallejo/inventory-gen
 ```
 
