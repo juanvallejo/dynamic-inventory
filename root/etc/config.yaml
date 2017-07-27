@@ -1,0 +1,13 @@
+---
+# default user configuration
+common_host_alias: openshiftdevel # host alias as defined in ~/.ssh/config
+ansible_ssh_user: ec2-user
+
+# openshift-ansible inventory vars
+openshift_uninstall_images: false
+openshift_install_examples: true
+openshift_deployment_type: origin
+
+# openshift cluster-admin credentials
+openshift_cluster_user: developer
+openshift_cluster_pass: fakepass

@@ -13,8 +13,15 @@ import shutil
 import subprocess
 import yaml
 
-HOME = os.environ['HOME']
-CONFIG = 'master-config.yaml'
+DEFAULT_USER_CONFIG_PATH = '/etc/config.yaml'
+
+try:
+    HOME = os.environ['HOME']
+except KeyError:
+    print 'A required environment variable "$HOME" has not been set'
+    exit(1)
+
+MASTER_CONFIG = 'master-config.yaml'
 INVY = 'generated_hosts'
 
 
@@ -188,10 +195,15 @@ def parse_hostname(host):
 
 def main():
     """Parse master-config file and populate inventory file."""
+    # set default values
+    USER_CONFIG = os.environ.get('CONFIG')
+    if not USER_CONFIG:
+        USER_CONFIG = DEFAULT_USER_CONFIG_PATH
+
     try:
-        file_obj = open(HOME + '/' + CONFIG, 'r')
+        file_obj = open(HOME + '/' + MASTER_CONFIG, 'r')
     except IOError as err:
-        print "Unable to find or read host master configuration file '{}': {}".format(CONFIG, err)
+        print "Unable to find or read host master configuration file '{}': {}".format(MASTER_CONFIG, err)
         exit(1)
 
     raw_text = file_obj.read()
@@ -206,30 +218,39 @@ def main():
     # cluster information for inventory file
     file_obj.close()
 
-    # TODO(jvallejo): read bind-mounted user-config file containing this information
-    common_host_alias = "openshiftdevel"
-    ansible_ssh_user = "ec2-user"
-    openshift_uninstall_images = False
-    openshift_install_examples = True
-    openshift_deployment_type  = "origin"
-    openshift_cluster_user     = 'developer'
-    openshift_cluster_pass     = 'fakepass'
+    try:
+        config_file_obj = open(USER_CONFIG, 'r')
+        raw_config_file = config_file_obj.read()
+        user_config = yaml.load(raw_config_file)
+    except IOError as err:
+        print "Unable to find or read user configuration file '{}': {}".format(USER_CONFIG, err)
+        exit(1)
+
+
+    # set inventory values based on user configuration
+    common_host_alias          = user_config.get('common_host_alias', 'openshiftdevel')
+    ansible_ssh_user           = user_config.get('ansible_ssh_user', 'ec2-user')
+    openshift_uninstall_images = user_config.get('openshift_uninstall_images', False)
+    openshift_install_examples = user_config.get('openshift_install_examples', True)
+    openshift_deployment_type  = user_config.get('openshift_deployment_type', 'origin')
+    openshift_cluster_user     = user_config.get('openshift_cluster_user', 'developer')
+    openshift_cluster_pass     = user_config.get('openshift_cluster_pass', 'fakepass')
+
 
     # extract host config info from parsed yaml file
     asset_config  = y.get("assetConfig")
     master_config = y.get("kubernetesMasterConfig")
     etcd_config   = y.get("etcdClientInfo")
     
-    # TODO(jvallejo): extract additional master and node host information from `oc get nodes`
     # if master_config is missing, error out; we expect to be running on a master to be able to
     # gather enough information to generate the rest of the inventory file.
     if not master_config:
-        print "'kubernetesMasterConfig' missing from '{}'; unable to gather all necessary host information...".format(CONFIG)
+        print "'kubernetesMasterConfig' missing from '{}'; unable to gather all necessary host information...".format(MASTER_CONFIG)
         exit(1)
 
     master_public_url = y.get("masterPublicURL")
     if not master_public_url:
-        print "'kubernetesMasterConfig.masterPublicURL' missing from '{}'; Unable to connect to master host...".format(CONFIG)
+        print "'kubernetesMasterConfig.masterPublicURL' missing from '{}'; Unable to connect to master host...".format(MASTER_CONFIG)
         exit(1)
 
     # connect to remote host using `oc login...` and extract all possible node information
@@ -291,7 +312,7 @@ def main():
     try:
         inv_file_obj = open(HOME + '/' + INVY, 'w+')
     except IOError as err:
-        print "Unable to create or open existing generated inventory file: {}".format(err)
+        print "Unable to create or open generated inventory file: {}".format(err)
         exit(1)
 
     inv_file_obj.write("[OSEv3:children]\n")
