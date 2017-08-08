@@ -9,5 +9,5 @@ openshift_install_examples: true
 openshift_deployment_type: origin
 
 # openshift cluster-admin credentials
-openshift_cluster_user: developer
-openshift_cluster_pass: fakepass
+openshift_cluster_user: cluster-node-viewer
+openshift_cluster_pass: ""

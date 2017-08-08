@@ -1,9 +1,9 @@
 #!/bin/bash -e
 #
-# This file serves as the main entrypoint to the openshift-ansible image.
+# This file serves as the main entrypoint to the inventory-generator image.
 #
 # For more information see the documentation:
-#	https://github.com/openshift/openshift-ansible/blob/master/README_CONTAINER_IMAGE.md
+#	https://github.com/juanvallejo/dynamic-inventory/blob/master/README.md
 
 
 # Patch /etc/passwd file with the current user info.

@@ -2,14 +2,14 @@
 
 OUTPUT_INVENTORY="generated_hosts"
 
-if [[ -z "${PLAYBOOK}" ]]; then
-  echo
-  echo "PLAYBOOK must be provided."
-  exec /usr/local/bin/usage
-fi
-
 # generate inventory script
 /usr/local/bin/generate ${OUTPUT_INVENTORY}
+
+if [[ -z "${PLAYBOOK}" ]]; then
+  echo
+  cat $HOME/${OUTPUT_INVENTORY}
+  exit 0
+fi
 
 # run ansible playbook using generated inventory
 ansible-playbook -vvv -i ${OUTPUT_INVENTORY} ${PLAYBOOK}  --become --become-user root
